@@ -1,0 +1,86 @@
+\documentclass[10pt,journal,compsoc]{IEEEtran} % Formato IEEE de alta calidad
+\usepackage[spanish]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{booktabs} % Para tablas profesionales
+\usepackage{tabularx} % Para tablas auto-ajustables a la columna
+\usepackage{microtype} % Mejora la justificación del texto
+
+\begin{document}
+
+\title{Detección de Enfermedades Foliares en Cultivos de Maíz mediante Deep Learning en Dispositivos Móviles }
+
+\author{Grupo de Trabajo 02 \\ Curso de Especialización en Machine Learning, Universidad de El Salvador}
+
+\markboth{Universidad de El Salvador, Ciclo I-2026}{Grupo 02}
+
+\IEEEtitleabstractindextext{%
+\begin{abstract}
+Este documento expone el diseño formal, restricciones de ingeniería y estrategia algorítmica para el despliegue en dispositivos móviles de un clasificador multiclase estricto enfocado en tres patologías foliares de alta incidencia en el maíz salvadoreño y tejido sano. Utilizando una metodología iterativa CRISP-DM y técnicas de transferencia de aprendizaje sobre arquitecturas eficientes, el sistema se restringe a un entorno completamente descentralizado (Edge AI) bajo estrictas limitaciones de cómputo, memoria y conectividad.
+\end{abstract}
+}
+
+\maketitle
+
+\section{Definición Formal del Problema de ML}
+El proyecto se modela formalmente como una tarea de clasificación supervisada multiclase de etiqueta única (\textit{single-label classification}). Se excluyen explícitamente los enfoques de detección de objetos (\textit{object detection}) y clasificación multietiqueta (\textit{multi-label classification}) para simplificar el entrenamiento y optimizar la eficiencia computacional en inferencia.
+
+Sea:
+$$X \subseteq \mathbb{R}^{224 \times 224 \times 3}$$
+el espacio de entrada compuesto por tensores de imágenes RGB normalizados, y sea el espacio discreto de salida:
+$$Y = \{\text{Roya}, \text{Tizón}, \text{Mancha gris}, \text{Sana}\}$$
+tal que el cardinal del conjunto de etiquetas es $|Y| = 4$ 
+
+El objetivo es parametrizar una función mapping $f_\theta: X \to [0,1]^{|Y|}$ que aproxime la distribución de probabilidad posterior condicional utilizando la función de activación Softmax en la última capa densa:
+$$f_\theta(x)_c = \frac{e^{z_c}}{\sum_{j=1}^{|Y|} e^{z_j}}$$
+
+La predicción final del estimador $\hat{y}$ y su métrica de certidumbre $p^*$ corresponden a:
+$$\hat{y} = \arg\max_{c \in Y} f_\theta(x)_c, \quad p^* = \max_{c \in Y} f_\theta(x)_c$$
+
+\section{Estrategia de Modelado y Optimización}
+La arquitectura troncal se fundamenta en \textbf{MobileNetV3}, explotando bloques de cuello de botella invertidos convolucionales lineales y mecanismos de \textit{Squeeze-and-Excitation}, optimizados para CPUs móviles. Con fines de validación y comparación de desempeño, se contemplan evaluaciones sistemáticas frente a modelos basados en \textbf{MobileNetV2} y \textbf{EfficientNet B0-B3}.
+
+Para la gestión de datos, se compilará un repositorio curado y estandarizado con un mínimo de 3,200 imágenes provenientes de repositorios públicos y trabajo de campo local, equilibrando aproximadamente 700 capturas por cada una de las cuatro clases.
+
+Para contrarrestar el sesgo de captura y el desajuste de distribución (\textit{Domain Shift}) entre imágenes de laboratorio y el entorno operativo real, el entrenamiento se divide en un pipeline secuencial de tres fases:
+\begin{enumerate}
+    \item \textbf{Preentrenamiento:} Transferencia de pesos base desde el dominio generalista ImageNet ($ \theta_{\text{pretrained}} $).
+    \item \textbf{Fine-Tuning Controlado:} Ajuste con aumento de datos estocástico (rotaciones, recortes, perturbaciones lumínicas) sobre conjuntos de datos estáticos en entornos de estudio.
+    \item \textbf{Fine-Tuning de Campo:} Ajuste final exclusivo con datos reales de cultivos locales para fijar la adaptación del dominio.
+\end{enumerate}
+
+La minimización del riesgo empírico se guiará por la función de pérdida de entropía cruzada categórica ponderada (\textit{Weighted Categorical Cross-Entropy}) para penalizar el desbalance de clases ($w_c$):
+$$\mathcal{L}(\theta) = - \frac{1}{N} \sum_{i=1}^{N} \sum_{c=1}^{|Y|} w_c \cdot y_{ic} \log\left(f_\theta(x_i)_c\right)$$
+
+El operador de actualización de pesos será el optimizador Adam , combinando estimaciones de momentos de primer y segundo orden.
+
+\section{Métricas Objetivo y Criterios de Éxito}
+Debido a la asimetría crítica en los costos de error agronómicos, el costo de un falso negativo ($FN$, diagnosticar una planta enferma como sana) es drásticamente superior al de un falso positivo ($FP$). Por ende, la ingeniería del modelo prioriza la sensibilidad por clase (\textit{Recall}) junto con el balance armónico del \textit{Macro F1-score}. 
+
+La meta de aceptación algorítmica se medirá sobre un conjunto de pruebas (\textit{Test Set}) ciego, independiente y compuesto prioritariamente por fotografías de campo reales, exigiendo estrictamente:
+$$\text{Recall}_c \ge 0.85 \quad \forall c \in \{\text{Patologías}\}$$
+$$\text{Macro F1-score} \ge 0.85$$
+
+\section{Restricciones de Despliegue (Edge AI)}
+La solución requiere inferencia determinista local con tolerancia cero a latencia de red (Inferencia 100\% Offline), diseñada para ejecutarse en el ecosistema Android mediante una Aplicación Web Progresiva (PWA). El modelo final congelado se transformará al formato ejecutable \textbf{TensorFlow Lite (.tflite)} aplicando cuantización estricta de enteros post-entrenamiento (Post-Training Quantization Int8).
+
+\begin{table}[h]
+\caption{Límites Operativos de la Inferencia Local}
+\label{tab:restricciones}
+\centering
+\begin{tabularx}{\columnwidth}{lXX}
+\toprule
+\textbf{Métrica de Recurso} & \textbf{Restricción} & \textbf{Método de Validación} \\
+\midrule
+Tamaño del Binario .tflite & $\le 20$ MB & Inspección de Sistema  \\
+Latencia de Inferencia & $\le 300$ ms & Telemetría On-Device  \\
+Consumo de RAM Volátil & $< 200$ MB & Android Profiler  \\
+Hardware de Referencia & SoC $\sim$Snapdragon 6xx & Terminal de Gama Media/Baja  \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Ante la ausencia de aprendizaje en el dispositivo (\textit{on-device learning}), el ciclo evolutivo del software implementará la recolección pasiva de telemetría de imágenes comprimidas mediante una sincronización asíncrona hacia una API en FastAPI, con el fin de construir un repositorio para futuras mejoras y reentrenamientos remotos (arquitectura no acoplada).
+
+\end{document}
