@@ -3,13 +3,14 @@
 \usepackage[utf8]{inputenc}
 \usepackage{amsmath}
 \usepackage{amsfonts}
+\usepackage{amssymb}
 \usepackage{booktabs} % Para tablas profesionales
 \usepackage{tabularx} % Para tablas auto-ajustables a la columna
 \usepackage{microtype} % Mejora la justificación del texto
 
 \begin{document}
 
-\title{Detección de Enfermedades Foliares en Cultivos de Maíz mediante Deep Learning en Dispositivos Móviles }
+\title{Detección de Enfermedades Foliares en Cultivos de Maíz mediante Deep Learning en Dispositivos Móviles}
 
 \author{Grupo de Trabajo 02 \\ Curso de Especialización en Machine Learning, Universidad de El Salvador}
 
@@ -23,47 +24,62 @@ Este documento expone el diseño formal, restricciones de ingeniería y estrateg
 
 \maketitle
 
+\section{Introducción y Metodología (CRISP-DM)}
+El desarrollo de soluciones tecnológicas en agricultura de precisión requiere una gestión sistemática de proyectos. El ciclo evolutivo de este clasificador fitopatológico sigue estrictamente el marco metodológico estándar de la industria \textbf{CRISP-DM} (\textit{Cross-Industry Standard Process for Data Mining}), estructurándose a través de sus fases iterativas: comprensión del negocio (necesidades del agricultor), comprensión de los datos (curación y análisis exploratorio), preparación de datos (estandarización y partición), modelado (transfer learning y optimización), evaluación (métricas con rigor estadístico) y despliegue (conversión a entornos móviles descentralizados).
+
 \section{Definición Formal del Problema de ML}
-El proyecto se modela formalmente como una tarea de clasificación supervisada multiclase de etiqueta única (\textit{single-label classification}). Se excluyen explícitamente los enfoques de detección de objetos (\textit{object detection}) y clasificación multietiqueta (\textit{multi-label classification}) para simplificar el entrenamiento y optimizar la eficiencia computacional en inferencia.
+El proyecto se modela formalmente como una tarea de clasificación supervisada multiclase de etiqueta única (\textit{single-label multi-class classification}). Se excluyen explícitamente los enfoques de detección de objetos (\textit{object detection}) y de clasificación multietiqueta (\textit{multi-label classification}) con el fin de reducir la complejidad computacional en el dispositivo móvil y simplificar el proceso de entrenamiento.
 
-Sea:
-$$X \subseteq \mathbb{R}^{224 \times 224 \times 3}$$
-el espacio de entrada compuesto por tensores de imágenes RGB normalizados, y sea el espacio discreto de salida:
-$$Y = \{\text{Roya}, \text{Tizón}, \text{Mancha gris}, \text{Sana}\}$$
-tal que el cardinal del conjunto de etiquetas es $|Y| = 4$ 
+Sean los espacios del problema:
+$$\mathcal{X} \subseteq \mathbb{R}^{224 \times 224 \times 3}$$
+el espacio de entrada compuesto por tensores de imágenes RGB normalizados y reescalados, y sea el espacio discreto de salida:
+$$\mathcal{Y} = \{1, 2, 3, 4\}$$
+donde el cardinal del conjunto de etiquetas es $|\mathcal{Y}| = 4$, correspondiente a las patologías foliares y tejido sano: Roya común ($c=1$), Tizón foliar ($c=2$), Mancha gris ($c=3$) y Hoja sana ($c=4$).
 
-El objetivo es parametrizar una función mapping $f_\theta: X \to [0,1]^{|Y|}$ que aproxime la distribución de probabilidad posterior condicional utilizando la función de activación Softmax en la última capa densa:
-$$f_\theta(x)_c = \frac{e^{z_c}}{\sum_{j=1}^{|Y|} e^{z_j}}$$
+La función de mapeo parametrizada por pesos $f_\theta: \mathcal{X} \to \Delta^{|\mathcal{Y}|-1}$ estima la probabilidad condicional posterior $\hat{p}_c(x) = P(Y=c|X=x; \theta)$, implementando la función de activación Softmax en la última capa densa sobre los logits de pre-activación $z \in \mathbb{R}^{|\mathcal{Y}|}$:
+$$f_\theta(x)_c = \frac{e^{z_c}}{\sum_{j=1}^{|\mathcal{Y}|} e^{z_j}}$$
 
-La predicción final del estimador $\hat{y}$ y su métrica de certidumbre $p^*$ corresponden a:
-$$\hat{y} = \arg\max_{c \in Y} f_\theta(x)_c, \quad p^* = \max_{c \in Y} f_\theta(x)_c$$
+La predicción final $\hat{y}$ se determina mediante el criterio del máximo a posteriori (MAP):
+$$\hat{y} = \arg\max_{c \in \mathcal{Y}} f_\theta(x)_c$$
 
-\section{Estrategia de Modelado y Optimización}
-La arquitectura troncal se fundamenta en \textbf{MobileNetV3}, explotando bloques de cuello de botella invertidos convolucionales lineales y mecanismos de \textit{Squeeze-and-Excitation}, optimizados para CPUs móviles. Con fines de validación y comparación de desempeño, se contemplan evaluaciones sistemáticas frente a modelos basados en \textbf{MobileNetV2} y \textbf{EfficientNet B0-B3}.
+\section{Adquisición de Datos y Partición Estratificada}
+El desarrollo del modelo requiere una base representativa y estandarizada. Para ello, se compilará un repositorio de datos curado de un tamaño mínimo de $N = 3,200$ imágenes. Las muestras provienen de una combinación balanceada de repositorios públicos indexados y fotografías reales tomadas mediante trabajo de campo local en parcelas agrícolas del país.
 
-Para la gestión de datos, se compilará un repositorio curado y estandarizado con un mínimo de 3,200 imágenes provenientes de repositorios públicos y trabajo de campo local, equilibrando aproximadamente 700 capturas por cada una de las cuatro clases.
+Se mantiene un balance estricto de clases de aproximadamente $N_c \approx 700$ imágenes por cada una de las cuatro categorías objetivo. A fin de evaluar la capacidad de generalización del modelo frente a datos no observados, la base de datos completa se divide mediante una partición estratificada (\textit{stratified train-validation-test split}) que mantiene el equilibrio original de clases, distribuida en:
+\begin{itemize}
+    \item 70\% para el conjunto de entrenamiento ($N_{\text{train}} \approx 2,240$ muestras).
+    \item 15\% para el conjunto de validación interna y sintonía de hiperparámetros ($N_{\text{val}} \approx 480$ muestras).
+    \item 15\% para el conjunto de pruebas finales offline ($N_{\text{test}} \approx 480$ muestras).
+\end{itemize}
 
-Para contrarrestar el sesgo de captura y el desajuste de distribución (\textit{Domain Shift}) entre imágenes de laboratorio y el entorno operativo real, el entrenamiento se divide en un pipeline secuencial de tres fases:
+\section{Arquitectura de Red y Estrategia de Transfer Learning}
+La arquitectura neuronal de referencia para dispositivos móviles es \textbf{MobileNetV3}, la cual optimiza el consumo de recursos mediante bloques de cuello de botella invertidos lineales (\textit{inverted residual bottlenecks}) con conexiones residuales, convoluciones separables en profundidad (\textit{depthwise separable convolutions}), mecanismos de atención de canal \textit{Squeeze-and-Excitation} (SE) y activaciones no lineales \textit{hard-swish}. Se contemplan comparativas sistemáticas de rendimiento con \textbf{MobileNetV2} y \textbf{EfficientNet B0-B3} para equilibrar la latencia y la precisión.
+
+Para contrarrestar el desajuste de distribución o cambio de covarianza (\textit{covariate shift}) entre las imágenes de laboratorio (dominio de origen $P_S(X)$ con alta nitidez y fondos controlados) y el entorno operativo real de campo (dominio de destino $P_T(X)$ con variaciones de oclusión, iluminación y fondo natural), el entrenamiento se estructura en tres fases:
 \begin{enumerate}
     \item \textbf{Preentrenamiento:} Transferencia de pesos base desde el dominio generalista ImageNet ($ \theta_{\text{pretrained}} $).
     \item \textbf{Fine-Tuning Controlado:} Ajuste con aumento de datos estocástico (rotaciones, recortes, perturbaciones lumínicas) sobre conjuntos de datos estáticos en entornos de estudio.
-    \item \textbf{Fine-Tuning de Campo:} Ajuste final exclusivo con datos reales de cultivos locales para fijar la adaptación del dominio.
+    \item \textbf{Fine-Tuning de Campo:} Ajuste final exclusivo y con una tasa de aprendizaje reducida ($\eta_{\text{field}} \ll \eta_{\text{lab}}$) sobre imágenes reales capturadas directamente en parcelas locales para fijar la adaptación de dominio.
 \end{enumerate}
 
-La minimización del riesgo empírico se guiará por la función de pérdida de entropía cruzada categórica ponderada (\textit{Weighted Categorical Cross-Entropy}) para penalizar el desbalance de clases ($w_c$):
-$$\mathcal{L}(\theta) = - \frac{1}{N} \sum_{i=1}^{N} \sum_{c=1}^{|Y|} w_c \cdot y_{ic} \log\left(f_\theta(x_i)_c\right)$$
+\section{Función de Pérdida y Optimización}
+La minimización del riesgo empírico ponderado se guiará por la pérdida de entropía cruzada categórica ponderada (\textit{Weighted Categorical Cross-Entropy}) para mitigar sesgos ante ligeras variaciones de muestreo entre las clases:
+$$\mathcal{L}(\theta) = - \frac{1}{N_{\text{batch}}} \sum_{i=1}^{N_{\text{batch}}} \sum_{c=1}^{|\mathcal{Y}|} w_c \cdot \mathbb{I}(y_i = c) \cdot \log\left(f_\theta(x_i)_c\right)$$
+donde $\mathbb{I}(\cdot)$ es la función indicadora y $w_c$ es el factor de ponderación asignado a la clase $c$. La actualización de pesos se realiza mediante el algoritmo del optimizador Adam, que combina estimaciones de momentos de primer y segundo orden.
 
-El operador de actualización de pesos será el optimizador Adam , combinando estimaciones de momentos de primer y segundo orden.
+\section{Criterios de Aceptación Algorítmica}
+Debido al impacto asimétrico de los errores fitopatológicos, un falso negativo ($FN$, no detectar una patología) tiene una penalización agronómica severa frente a un falso positivo ($FP$). Por ello, la ingeniería del modelo prioriza la sensibilidad por clase (\textit{Recall}) junto con el promedio armónico no ponderado de las precisiones y sensibilidades ($Macro\ F_1\text{-score}$):
+$$Recall_c = \frac{TP_c}{TP_c + FN_c}$$
+$$Macro\ F_1 = \frac{1}{|\mathcal{Y}|} \sum_{c=1}^{|\mathcal{Y}|} \frac{2 \cdot Precision_c \cdot Recall_c}{Precision_c + Recall_c}$$
 
-\section{Métricas Objetivo y Criterios de Éxito}
-Debido a la asimetría crítica en los costos de error agronómicos, el costo de un falso negativo ($FN$, diagnosticar una planta enferma como sana) es drásticamente superior al de un falso positivo ($FP$). Por ende, la ingeniería del modelo prioriza la sensibilidad por clase (\textit{Recall}) junto con el balance armónico del \textit{Macro F1-score}. 
+La meta de aceptación exige estrictamente:
+$$Recall_c \ge 0.85 \quad \forall c \in \{\text{Patologías}\}$$
+$$Macro\ F_1\text{-score} \ge 0.85$$
 
-La meta de aceptación algorítmica se medirá sobre un conjunto de pruebas (\textit{Test Set}) ciego, independiente y compuesto prioritariamente por fotografías de campo reales, exigiendo estrictamente:
-$$\text{Recall}_c \ge 0.85 \quad \forall c \in \{\text{Patologías}\}$$
-$$\text{Macro F1-score} \ge 0.85$$
+Para garantizar que estas métricas representen la capacidad del modelo en producción, la evaluación final se realizará estrictamente sobre un conjunto de pruebas (\textit{Test Set}) ciego, independiente y compuesto prioritariamente por fotografías de campo reales.
 
 \section{Restricciones de Despliegue (Edge AI)}
-La solución requiere inferencia determinista local con tolerancia cero a latencia de red (Inferencia 100\% Offline), diseñada para ejecutarse en el ecosistema Android mediante una Aplicación Web Progresiva (PWA). El modelo final congelado se transformará al formato ejecutable \textbf{TensorFlow Lite (.tflite)} aplicando cuantización estricta de enteros post-entrenamiento (Post-Training Quantization Int8).
+La solución requiere inferencia determinista local con tolerancia cero a latencia de red (Inferencia 100\% Offline), diseñada para ejecutarse en el ecosistema Android mediante una Aplicación Web Progresiva (PWA). El modelo congelado (FP32) se optimiza mediante cuantización estricta de enteros post-entrenamiento (PTQ Int8), reduciendo el rango dinámico de pesos y activaciones a enteros de 8 bits ($W_8 A_8$) para maximizar la velocidad de cómputo en la CPU móvil.
 
 \begin{table}[h]
 \caption{Límites Operativos de la Inferencia Local}
@@ -81,6 +97,16 @@ Hardware de Referencia & SoC $\sim$Snapdragon 6xx & Terminal de Gama Media/Baja 
 \end{tabularx}
 \end{table}
 
-Ante la ausencia de aprendizaje en el dispositivo (\textit{on-device learning}), el ciclo evolutivo del software implementará la recolección pasiva de telemetría de imágenes comprimidas mediante una sincronización asíncrona hacia una API en FastAPI, con el fin de construir un repositorio para futuras mejoras y reentrenamientos remotos (arquitectura no acoplada).
+Debido a la ausencia de aprendizaje local en el dispositivo (\textit{on-device learning}), el ciclo evolutivo del software implementará la recolección pasiva de telemetría de imágenes comprimidas mediante una sincronización asíncrona hacia una API en FastAPI, para construir un repositorio estructurado destinado a fases posteriores de reentrenamiento remoto (arquitectura no acoplada).
+
+\section{Valor Operativo y Entregables para el Usuario Final}
+El sistema de aplicación móvil PWA está diseñado para que el productor agrícola o técnico agrónomo obtenga beneficios directos e inmediatos en el punto de inspección del cultivo:
+\begin{enumerate}
+    \item \textit{Diagnóstico Fitosanitario en Tiempo Real:} El usuario obtiene una clasificación automatizada instantánea que identifica de forma específica si la planta padece de Roya común, Tizón foliar o Mancha gris, o si el tejido foliar se encuentra sano, reduciendo los tiempos de respuesta agrícola.
+    \item \textit{Autonomía Operativa Fuera de Red:} Gracias a la inferencia 100\% offline, el usuario obtiene la capacidad de diagnosticar sus parcelas en zonas de cultivo aisladas donde no existe cobertura de red móvil ni conexión a internet.
+    \item \textit{Certidumbre de Diagnóstico:} La aplicación proporciona una métrica de confianza probabilística ($p^*$) asociada al diagnóstico. Esto permite al usuario evaluar de manera cuantitativa el nivel de fiabilidad de la clasificación antes de iniciar intervenciones.
+    \item \textit{Directrices de Mitigación Agronómica:} Ante cualquier detección positiva de enfermedad, el usuario obtiene en pantalla recomendaciones agronómicas y planes de acción pre-cargados para contener y tratar la patología foliar identificada.
+    \item \textit{Historial Georreferenciado de Análisis:} El usuario obtiene un registro digitalizado de todas las inspecciones realizadas, vinculando de manera automática el diagnóstico, la imagen capturada y las coordenadas GPS, lo cual facilita el mapeo de brotes de infección y el seguimiento histórico de la parcela.
+\end{enumerate}
 
 \end{document}
