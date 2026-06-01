@@ -7,43 +7,55 @@
 \usepackage{booktabs} % Para tablas profesionales
 \usepackage{tabularx} % Para tablas auto-ajustables a la columna
 \usepackage{microtype} % Mejora la justificación del texto
+\usepackage{url} % Soporte para \url en texto
 
 \begin{document}
 
 \title{Detección de Enfermedades Foliares en Cultivos de Maíz mediante Deep Learning en Dispositivos Móviles}
 
-\author{Grupo de Trabajo 02 \\ Curso de Especialización en Machine Learning, Universidad de El Salvador}
+\author{
+\IEEEauthorblockN{
+Josías Abner Rivas Fuentes,
+David Alejandro Deras Cerros,
+Elmer Edenilson Rosales Molina
+}
 
-\markboth{Universidad de El Salvador, Ciclo I-2026}{Grupo 02}
+\IEEEauthorblockA{
+RF20010, DC19019, RM20001\\
+Grupo de Trabajo 02\\
+Curso de Especialización en Machine Learning\\
+Facultad de Ingeniería y Arquitectura\\
+Universidad de El Salvador\\
+San Salvador, El Salvador
+}
+}
 
 \IEEEtitleabstractindextext{%
 \begin{abstract}
-Este documento expone el diseño formal, restricciones de ingeniería y estrategia algorítmica para el despliegue en dispositivos móviles de un clasificador multiclase estricto enfocado en tres patologías foliares de alta incidencia en el maíz salvadoreño y tejido sano. Utilizando una metodología iterativa CRISP-DM y técnicas de transferencia de aprendizaje sobre arquitecturas eficientes, el sistema se restringe a un entorno completamente descentralizado (Edge AI) bajo estrictas limitaciones de cómputo, memoria y conectividad.
+El cultivo de maíz constituye una actividad agrícola relevante en El Salvador, donde la identificación oportuna de enfermedades foliares puede contribuir a reducir pérdidas productivas. Este trabajo presenta una aplicación móvil capaz de clasificar tres enfermedades foliares del maíz (como mínimo) y hojas sanas a partir de imágenes, operando completamente offline en dispositivos Android de gama media y baja. La propuesta adopta la metodología CRISP-DM y emplea transferencia de aprendizaje sobre arquitecturas ligeras de visión por computadora. Se establecen como objetivos de desempeño un $Macro\ F_1 \ge 0.85$ y una alta sensibilidad por clase, junto con restricciones de despliegue orientadas a mantener un modelo liviano y tiempos de inferencia reducidos. El sistema busca apoyar la identificación temprana de enfermedades en campo y servir como base para futuras mejoras mediante la incorporación de datos recolectados en condiciones reales de uso.
 \end{abstract}
 }
 
 \maketitle
 
 \section{Introducción y Metodología (CRISP-DM)}
-El desarrollo de soluciones tecnológicas en agricultura de precisión requiere una gestión sistemática de proyectos. El ciclo evolutivo de este clasificador fitopatológico sigue estrictamente el marco metodológico estándar de la industria \textbf{CRISP-DM} (\textit{Cross-Industry Standard Process for Data Mining}), estructurándose a través de sus fases iterativas: comprensión del negocio (necesidades del agricultor), comprensión de los datos (curación y análisis exploratorio), preparación de datos (estandarización y partición), modelado (transfer learning y optimización), evaluación (métricas con rigor estadístico) y despliegue (conversión a entornos móviles descentralizados).
+El proyecto se gestiona con el marco \textbf{CRISP-DM}, asegurando trazabilidad entre necesidades reales del agricultor, datos, modelado, evaluacion y despliegue en campo. Este enfoque iterativo permite ajustar decisiones tecnicas con base en evidencia y restricciones de hardware movil.
 
-\section{Definición Formal del Problema de ML}
-El proyecto se modela formalmente como una tarea de clasificación supervisada multiclase de etiqueta única (\textit{single-label multi-class classification}). Se excluyen explícitamente los enfoques de detección de objetos (\textit{object detection}) y de clasificación multietiqueta (\textit{multi-label classification}) con el fin de reducir la complejidad computacional en el dispositivo móvil y simplificar el proceso de entrenamiento.
+\section{Puntos Clave y Relevancia del Proyecto}
+Para facilitar la evaluacion estrategica y la viabilidad del proyecto, se destacan los siguientes factores y decisiones de diseño:
+\begin{itemize}
+    \item \textbf{Impacto socioeconomico:} El enfoque esta orientado a pequenos productores (82.1\% del sector), para reducir perdidas que pueden alcanzar hasta el 70\% si no se detectan enfermedades en las primeras dos semanas.
+    \item \textbf{Riesgo agronomico:} Se prioriza el \textit{Recall} por clase para minimizar falsos negativos, que son mas costosos que falsos positivos en campo.
+    \item \textbf{Viabilidad operativa:} La solucion funciona sin internet y se optimiza para celulares Android de gama media/baja, con un modelo liviano y latencia baja.
+    \item \textbf{Adaptacion al entorno real:} El entrenamiento progresa desde imagenes controladas hacia imagenes de campo para mejorar la generalizacion bajo sombras, iluminacion variable y fondos naturales.
+    \item \textbf{Mejora continua:} La app puede recolectar nuevas muestras y metadatos con conexion disponible, construyendo un repositorio para futuros reentrenamientos.
+\end{itemize}
 
-Sean los espacios del problema:
-$$\mathcal{X} \subseteq \mathbb{R}^{224 \times 224 \times 3}$$
-el espacio de entrada compuesto por tensores de imágenes RGB normalizados y reescalados, y sea el espacio discreto de salida:
-$$\mathcal{Y} = \{1, 2, 3, 4\}$$
-donde el cardinal del conjunto de etiquetas es $|\mathcal{Y}| = 4$, correspondiente a las patologías foliares y tejido sano: Roya común ($c=1$), Tizón foliar ($c=2$), Mancha gris ($c=3$) y Hoja sana ($c=4$).
+\section{Definicion del Problema}
+El proyecto aborda una clasificacion supervisada multiclase de etiqueta unica con cuatro categorias iniciales: tres enfermedades foliares de alta incidencia (roya comun, tizon foliar, mancha gris) y hoja sana. Se evita deteccion de objetos y clasificacion multietiqueta para reducir complejidad en el dispositivo movil y mantener un flujo simple de uso en campo.
 
-La función de mapeo parametrizada por pesos $f_\theta: \mathcal{X} \to \Delta^{|\mathcal{Y}|-1}$ estima la probabilidad condicional posterior $\hat{p}_c(x) = P(Y=c|X=x; \theta)$, implementando la función de activación Softmax en la última capa densa sobre los logits de pre-activación $z \in \mathbb{R}^{|\mathcal{Y}|}$:
-$$f_\theta(x)_c = \frac{e^{z_c}}{\sum_{j=1}^{|\mathcal{Y}|} e^{z_j}}$$
-
-La predicción final $\hat{y}$ se determina mediante el criterio del máximo a posteriori (MAP):
-$$\hat{y} = \arg\max_{c \in \mathcal{Y}} f_\theta(x)_c$$
-
-\section{Adquisición de Datos y Partición Estratificada}
-El desarrollo del modelo requiere una base representativa y estandarizada. Para ello, se compilará un repositorio de datos curado de un tamaño mínimo de $N = 3,200$ imágenes. Las muestras provienen de una combinación balanceada de repositorios públicos indexados y fotografías reales tomadas mediante trabajo de campo local en parcelas agrícolas del país.
+\section{Adquisicion de Datos y Particion Estratificada}
+El desarrollo del modelo requiere una base representativa y estandarizada. Para ello, se compilará un repositorio de datos curado de un tamaño mínimo de $N = 3,200$ imágenes (sin contar las que se agreguen mediante data augmentation). Las muestras provienen de una combinación balanceada de repositorios públicos indexados y fotografías reales tomadas mediante trabajo de campo.
 
 Se mantiene un balance estricto de clases de aproximadamente $N_c \approx 700$ imágenes por cada una de las cuatro categorías objetivo. A fin de evaluar la capacidad de generalización del modelo frente a datos no observados, la base de datos completa se divide mediante una partición estratificada (\textit{stratified train-validation-test split}) que mantiene el equilibrio original de clases, distribuida en:
 \begin{itemize}
@@ -62,21 +74,11 @@ Para contrarrestar el desajuste de distribución o cambio de covarianza (\textit
     \item \textbf{Fine-Tuning de Campo:} Ajuste final exclusivo y con una tasa de aprendizaje reducida ($\eta_{\text{field}} \ll \eta_{\text{lab}}$) sobre imágenes reales capturadas directamente en parcelas locales para fijar la adaptación de dominio.
 \end{enumerate}
 
-\section{Función de Pérdida y Optimización}
-La minimización del riesgo empírico ponderado se guiará por la pérdida de entropía cruzada categórica ponderada (\textit{Weighted Categorical Cross-Entropy}) para mitigar sesgos ante ligeras variaciones de muestreo entre las clases:
-$$\mathcal{L}(\theta) = - \frac{1}{N_{\text{batch}}} \sum_{i=1}^{N_{\text{batch}}} \sum_{c=1}^{|\mathcal{Y}|} w_c \cdot \mathbb{I}(y_i = c) \cdot \log\left(f_\theta(x_i)_c\right)$$
-donde $\mathbb{I}(\cdot)$ es la función indicadora y $w_c$ es el factor de ponderación asignado a la clase $c$. La actualización de pesos se realiza mediante el algoritmo del optimizador Adam, que combina estimaciones de momentos de primer y segundo orden.
+\section{Funcion de Perdida y Optimizacion}
+Se utilizara entropia cruzada categorial con ponderacion por clase para reducir sesgos de muestreo, y el optimizador Adam por su estabilidad en convergencia. Esta combinacion permite priorizar la deteccion de enfermedades menos frecuentes sin penalizar la precision global.
 
-\section{Criterios de Aceptación Algorítmica}
-Debido al impacto asimétrico de los errores fitopatológicos, un falso negativo ($FN$, no detectar una patología) tiene una penalización agronómica severa frente a un falso positivo ($FP$). Por ello, la ingeniería del modelo prioriza la sensibilidad por clase (\textit{Recall}) junto con el promedio armónico no ponderado de las precisiones y sensibilidades ($Macro\ F_1\text{-score}$):
-$$Recall_c = \frac{TP_c}{TP_c + FN_c}$$
-$$Macro\ F_1 = \frac{1}{|\mathcal{Y}|} \sum_{c=1}^{|\mathcal{Y}|} \frac{2 \cdot Precision_c \cdot Recall_c}{Precision_c + Recall_c}$$
-
-La meta de aceptación exige estrictamente:
-$$Recall_c \ge 0.85 \quad \forall c \in \{\text{Patologías}\}$$
-$$Macro\ F_1\text{-score} \ge 0.85$$
-
-Para garantizar que estas métricas representen la capacidad del modelo en producción, la evaluación final se realizará estrictamente sobre un conjunto de pruebas (\textit{Test Set}) ciego, independiente y compuesto prioritariamente por fotografías de campo reales.
+\section{Criterios de Aceptacion Algoritmica}
+Dado que un falso negativo es mas costoso en campo, se prioriza \textit{Recall} por clase. El criterio de aceptacion establece $Recall \ge 0.85$ para cada patologia y un $Macro\ F_1 \ge 0.85$, evaluados en un conjunto de prueba independiente y compuesto principalmente por imagenes reales de campo.
 
 \section{Restricciones de Despliegue (Edge AI)}
 La solución requiere inferencia determinista local con tolerancia cero a latencia de red (Inferencia 100\% Offline), diseñada para ejecutarse en el ecosistema Android mediante una Aplicación Web Progresiva (PWA). El modelo congelado (FP32) se optimiza mediante cuantización estricta de enteros post-entrenamiento (PTQ Int8), reduciendo el rango dinámico de pesos y activaciones a enteros de 8 bits ($W_8 A_8$) para maximizar la velocidad de cómputo en la CPU móvil.
@@ -97,16 +99,30 @@ Hardware de Referencia & SoC $\sim$Snapdragon 6xx & Terminal de Gama Media/Baja 
 \end{tabularx}
 \end{table}
 
-Debido a la ausencia de aprendizaje local en el dispositivo (\textit{on-device learning}), el ciclo evolutivo del software implementará la recolección pasiva de telemetría de imágenes comprimidas mediante una sincronización asíncrona hacia una API en FastAPI, para construir un repositorio estructurado destinado a fases posteriores de reentrenamiento remoto (arquitectura no acoplada).
+Debido a la ausencia de aprendizaje local en el dispositivo (\textit{on-device learning}), el ciclo evolutivo del software implementará la recolección pasiva de telemetría de imágenes comprimidas mediante una sincronización asíncrona hacia una API en FastAPI, para construir un repositorio estructurado destinado a fases posteriores de reentrenamiento (el reentrenamiento no forma parte de este trabajo).
 
 \section{Valor Operativo y Entregables para el Usuario Final}
-El sistema de aplicación móvil PWA está diseñado para que el productor agrícola o técnico agrónomo obtenga beneficios directos e inmediatos en el punto de inspección del cultivo:
+El sistema de aplicación móvil está diseñado para que el productor agrícola o técnico agrónomo obtenga beneficios directos e inmediatos en el punto de inspección del cultivo:
 \begin{enumerate}
-    \item \textit{Diagnóstico Fitosanitario en Tiempo Real:} El usuario obtiene una clasificación automatizada instantánea que identifica de forma específica si la planta padece de Roya común, Tizón foliar o Mancha gris, o si el tejido foliar se encuentra sano, reduciendo los tiempos de respuesta agrícola.
+    \item \textit{Diagnóstico Fitosanitario en Tiempo Real:} El usuario obtiene una clasificación automatizada instantánea que identifica de forma específica si la planta padece de alguna enfermedad, o si el tejido foliar se encuentra sano, reduciendo los tiempos de respuesta agrícola.
     \item \textit{Autonomía Operativa Fuera de Red:} Gracias a la inferencia 100\% offline, el usuario obtiene la capacidad de diagnosticar sus parcelas en zonas de cultivo aisladas donde no existe cobertura de red móvil ni conexión a internet.
     \item \textit{Certidumbre de Diagnóstico:} La aplicación proporciona una métrica de confianza probabilística ($p^*$) asociada al diagnóstico. Esto permite al usuario evaluar de manera cuantitativa el nivel de fiabilidad de la clasificación antes de iniciar intervenciones.
     \item \textit{Directrices de Mitigación Agronómica:} Ante cualquier detección positiva de enfermedad, el usuario obtiene en pantalla recomendaciones agronómicas y planes de acción pre-cargados para contener y tratar la patología foliar identificada.
-    \item \textit{Historial Georreferenciado de Análisis:} El usuario obtiene un registro digitalizado de todas las inspecciones realizadas, vinculando de manera automática el diagnóstico, la imagen capturada y las coordenadas GPS, lo cual facilita el mapeo de brotes de infección y el seguimiento histórico de la parcela.
 \end{enumerate}
+
+\section{Documentacion del Proyecto}
+Se mantendra una web de seguimiento que funcione como documentacion viva e historial de trabajo mediante Git. En ella ya se pueden consultar los primeros analisis de los datasets evaluados a la fecha (31-05-2026): \textit{DoctorMaiz} (\url{https://doctor-maiz.deras.dev/es/}).
+
+El repositorio oficial de documentacion, notebooks, scripts y materiales del proyecto se encuentra en GitHub: \textit{daiv05/corn-leaf-desease-project} (\url{https://github.com/daiv05/corn-leaf-desease-project}).
+
+\section{Fechas Clave}
+\begin{itemize}
+    \item 22 de junio al 5 de julio: Desarrollo del proyecto en etapa 1.
+    \item 31 de agosto al 12 de septiembre: Desarrollo del proyecto en etapa 2.
+    \item 8 al 21 de noviembre: Trabajo final y presentacion del modelo de Machine Learning.
+\end{itemize}
+
+\section{Cierre}
+La propuesta traduce una necesidad critica del sector maicero en una herramienta util y viable para campo: diagnostico temprano, uso sin internet y metas de calidad verificables. El enfoque metodologico, la adaptacion a datos reales y las restricciones de despliegue permiten ofrecer una solucion útil, viable y con potencial de mejora continua mediante recoleccion controlada de datos locales.
 
 \end{document}
